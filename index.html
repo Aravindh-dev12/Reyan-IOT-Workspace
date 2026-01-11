@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>SCADAPro — GridStack + ECharts</title>
+
+<link href="https://cdn.jsdelivr.net/npm/gridstack@10.3.0/dist/gridstack.min.css" rel="stylesheet"/>
+<link href="style.css" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/gridstack@10.3.0/dist/gridstack-all.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<script src="https://unpkg.com/@phosphor-icons/web"></script>
+</head>
+<body>
+<div class="app">
+  <div class="nav">
+    <div class="nav-left"><strong>SCADAPro</strong></div>
+    <div id="nav-right" class="nav-right">
+      <div id="user-badge">vinoba</div>
+    </div>
+  </div>
+
+  <div id="screen-list">
+    <div class="list-body">
+      <div class="list-header">
+        <div>
+          <h2>My Dashboards</h2>
+          <div class="small">Select a layout to open the workspace</div>
+        </div>
+        <div class="list-actions">
+          <button class="btn btn-primary" onclick="createNewDashboard()">Create New</button>
+          <button class="btn btn-ghost" onclick="importDashboard()">Import Dashboard</button>
+          <input type="file" id="import-file-input" class="import-input" accept=".json" onchange="handleFileImport(event)">
+        </div>
+      </div>
+
+      <div class="list-spacer"></div>
+      <div id="dashboard-cards" class="grid-cards"></div>
+    </div>
+  </div>
+
+  <div id="screen-workspace" class="hidden">
+    <div class="workspace">
+      <aside>
+        <div class="sidebar-header">
+          <button class="btn btn-ghost" onclick="closeWorkspace()">← Back to List</button>
+        </div>
+
+        <div id="sidebar-nav" class="hidden">
+          <div class="section-title">Dashboard Views</div>
+          <div id="sidebar-nav-items" class="sidebar-nav-section"></div>
+          
+          <div class="sidebar-nav-actions">
+            <button class="btn btn-primary" onclick="openCreateViewModal()">
+              <i class="ph ph-plus"></i> Add View
+            </button>
+            <button class="btn btn-ghost" onclick="openManageViewsModal()">
+              <i class="ph ph-gear"></i> Manage
+            </button>
+          </div>
+        </div>
+
+        <div id="palette" class="hidden">
+          <div class="section-title">Line Charts</div>
+          <div class="palette-section">
+            <button class="palette-btn" onclick="addWidget('basicLine')"><div class="ic"><i class="ph ph-chart-line"></i></div><span>Basic Line</span></button>
+            <button class="palette-btn" onclick="addWidget('smoothLine')"><div class="ic"><i class="ph ph-chart-line"></i></div><span>Smooth Line</span></button>
+            <button class="palette-btn" onclick="addWidget('stepLine')"><div class="ic"><i class="ph ph-stairs"></i></div><span>Step Line</span></button>
+            <button class="palette-btn" onclick="addWidget('basicArea')"><div class="ic"><i class="ph ph-chart-line-up"></i></div><span>Area Chart</span></button>
+            <button class="palette-btn" onclick="addWidget('stackedLine')"><div class="ic"><i class="ph ph-stack"></i></div><span>Stacked Line</span></button>
+            <button class="palette-btn" onclick="addWidget('stackedArea')"><div class="ic"><i class="ph ph-stack-simple"></i></div><span>Stacked Area</span></button>
+            <button class="palette-btn" onclick="addWidget('multiAxis')"><div class="ic"><i class="ph ph-arrows-left-right"></i></div><span>Multi Axis</span></button>
+            <button class="palette-btn" onclick="addWidget('confidenceBand')"><div class="ic"><i class="ph ph-cloud"></i></div><span>Confidence Band</span></button>
+            <button class="palette-btn" onclick="addWidget('largeArea')"><div class="ic"><i class="ph ph-chart-line-up"></i></div><span>Large Area</span></button>
+            <button class="palette-btn" onclick="addWidget('timeseries')"><div class="ic"><i class="ph ph-clock"></i></div><span>Time Series</span></button>
+            <button class="palette-btn" onclick="addWidget('dynamicLine')"><div class="ic"><i class="ph ph-lightning"></i></div><span>Dynamic Line</span></button>
+          </div>
+
+          <div class="section-title">Bar Charts</div>
+          <div class="palette-section">
+            <button class="palette-btn" onclick="addWidget('bar')"><div class="ic"><i class="ph ph-chart-bar"></i></div><span>Bar Chart</span></button>
+            <button class="palette-btn" onclick="addWidget('horizontalBar')"><div class="ic"><i class="ph ph-chart-bar-horizontal"></i></div><span>Horizontal Bar</span></button>
+            <button class="palette-btn" onclick="addWidget('stackedBar')"><div class="ic"><i class="ph ph-stack"></i></div><span>Stacked Bar</span></button>
+            <button class="palette-btn" onclick="addWidget('sortBar')"><div class="ic"><i class="ph ph-sort-ascending"></i></div><span>Sorted Bar</span></button>
+            <button class="palette-btn" onclick="addWidget('simpleEncode')"><div class="ic"><i class="ph ph-database"></i></div><span>Dataset Bar</span></button>
+            <button class="palette-btn" onclick="addWidget('floatingBar')"><div class="ic"><i class="ph ph-arrows-out"></i></div><span>Floating Bar</span></button>
+            <button class="palette-btn" onclick="addWidget('polarBar')"><div class="ic"><i class="ph ph-circle"></i></div><span>Polar Bar</span></button>
+            <button class="palette-btn" onclick="addWidget('radialBar')"><div class="ic"><i class="ph ph-circle-wavy"></i></div><span>Radial Bar</span></button>
+          </div>
+
+          <div class="section-title">Pie & Circular</div>
+          <div class="palette-section">
+            <button class="palette-btn" onclick="addWidget('pie')"><div class="ic"><i class="ph ph-chart-pie"></i></div><span>Pie Chart</span></button>
+            <button class="palette-btn" onclick="addWidget('donut')"><div class="ic"><i class="ph ph-circle-dashed"></i></div><span>Donut Chart</span></button>
+            <button class="palette-btn" onclick="addWidget('radar')"><div class="ic"><i class="ph ph-target"></i></div><span>Radar Chart</span></button>
+            <button class="palette-btn" onclick="addWidget('polar')"><div class="ic"><i class="ph ph-circle"></i></div><span>Polar Chart</span></button>
+          </div>
+
+          <div class="section-title">Gauges & Progress</div>
+          <div class="palette-section">
+            <button class="palette-btn" onclick="addWidget('gauge')"><div class="ic"><i class="ph ph-gauge"></i></div><span>Gauge</span></button>
+            <button class="palette-btn" onclick="addWidget('progress')"><div class="ic"><i class="ph ph-circle-notch"></i></div><span>Progress Gauge</span></button>
+            <button class="palette-btn" onclick="addWidget('liquid')"><div class="ic"><i class="ph ph-drop"></i></div><span>Liquid Fill</span></button>
+            <button class="palette-btn" onclick="addWidget('multiGauge')"><div class="ic"><i class="ph ph-gauge"></i></div><span>Multi Gauge</span></button>
+            <button class="palette-btn" onclick="addWidget('dashboard')"><div class="ic"><i class="ph ph-speedometer"></i></div><span>Dashboard</span></button>
+            <button class="palette-btn" onclick="addWidget('thermometer')"><div class="ic"><i class="ph ph-thermometer"></i></div><span>Thermometer</span></button>
+          </div>
+
+          <div class="section-title">Scatter & Bubble</div>
+          <div class="palette-section">
+            <button class="palette-btn" onclick="addWidget('scatter')"><div class="ic"><i class="ph ph-scatter-plot"></i></div><span>Scatter Plot</span></button>
+            <button class="palette-btn" onclick="addWidget('bubble')"><div class="ic"><i class="ph ph-circle"></i></div><span>Bubble Chart</span></button>
+            <button class="palette-btn" onclick="addWidget('scatterMatrix')"><div class="ic"><i class="ph ph-grid-four"></i></div><span>Scatter Matrix</span></button>
+            <button class="palette-btn" onclick="addWidget('scatterRegression')"><div class="ic"><i class="ph ph-trend-up"></i></div><span>Scatter Regression</span></button>
+            <button class="palette-btn" onclick="addWidget('scatterClustering')"><div class="ic"><i class="ph ph-circles-three"></i></div><span>Scatter Clusters</span></button>
+          </div>
+
+          <div class="section-title">Heatmap & Treemap</div>
+          <div class="palette-section">
+            <button class="palette-btn" onclick="addWidget('heatmap')"><div class="ic"><i class="ph ph-fire"></i></div><span>Heatmap</span></button>
+            <button class="palette-btn" onclick="addWidget('calendarHeat')"><div class="ic"><i class="ph ph-calendar"></i></div><span>Calendar Heat</span></button>
+          </div>
+
+          <div class="section-title">Special Charts</div>
+          <div class="palette-section">
+            <button class="palette-btn" onclick="addWidget('funnel')"><div class="ic"><i class="ph ph-funnel"></i></div><span>Funnel Chart</span></button>
+            <button class="palette-btn" onclick="addWidget('map')"><div class="ic"><i class="ph ph-map-trifold"></i></div><span>Map Chart</span></button>
+          </div>
+
+          <div class="section-title">UI Components</div>
+          <div class="palette-section">
+            <button class="palette-btn" onclick="addWidget('card')"><div class="ic"><i class="ph ph-cardholder"></i></div><span>Card</span></button>
+            <button class="palette-btn" onclick="addWidget('groupCard')"><div class="ic"><i class="ph ph-cards-three"></i></div><span>Group Cards</span></button>
+            <button class="palette-btn" onclick="addWidget('table')"><div class="ic"><i class="ph ph-table"></i></div><span>Table</span></button>
+            <button class="palette-btn" onclick="addWidget('input')"><div class="ic"><i class="ph ph-textbox"></i></div><span>Input Field</span></button>
+            <button class="palette-btn" onclick="addWidget('button')"><div class="ic"><i class="ph ph-square"></i></div><span>Button</span></button>
+            <button class="palette-btn" onclick="addWidget('toggle')"><div class="ic"><i class="ph ph-toggle-left"></i></div><span>Toggle</span></button>
+            <button class="palette-btn" onclick="addWidget('slider')"><div class="ic"><i class="ph ph-sliders"></i></div><span>Slider</span></button>
+            <button class="palette-btn" onclick="addWidget('dropdown')"><div class="ic"><i class="ph ph-caret-down"></i></div><span>Dropdown</span></button>
+            <button class="palette-btn" onclick="addWidget('terminal')"><div class="ic"><i class="ph ph-terminal-window"></i></div><span>Terminal</span></button>
+            <button class="palette-btn" onclick="addWidget('iframe')"><div class="ic"><i class="ph ph-browser"></i></div><span>Webpage</span></button>
+            <button class="palette-btn" onclick="addWidget('image')"><div class="ic"><i class="ph ph-image"></i></div><span>Image</span></button>
+            <button class="palette-btn" onclick="addWidget('html')"><div class="ic"><i class="ph ph-code"></i></div><span>HTML</span></button>
+          </div>
+        </div>
+      </aside>
+
+      <main>
+        <div class="header">
+          <div class="header-left">
+            <div id="workspace-status-dot" class="status-dot"></div>
+            <div id="workspace-title" class="workspace-title">Loading...</div>
+            <div id="workspace-panel-id" class="panel-id"></div>
+          </div>
+
+          <div class="header-actions" id="header-actions">
+            <button id="btn-edit" class="btn" onclick="enterEditMode()"><i class="ph ph-pencil-simple"></i> Edit Layout</button>
+            <button id="btn-save" class="btn btn-primary hidden" onclick="saveCurrentDashboard()">Save Changes</button>
+            <button id="btn-cancel" class="btn btn-ghost hidden" onclick="cancelEdit()">Cancel</button>
+            <button id="btn-export" class="btn btn-ghost hidden" onclick="exportCurrentDashboard()">Export</button>
+            <button id="btn-history" class="btn btn-ghost hidden" onclick="openHistoryModal()">History</button>
+          </div>
+        </div>
+
+        <div class="workspace-body">
+          <div class="grid-wrap">
+            <div class="grid-stack"></div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div id="settings-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modal-title">Widget Settings</h3>
+        <button class="btn btn-ghost" onclick="closeModal()">Close</button>
+      </div>
+
+      <div class="modal-content">
+        <div class="form-row">
+          <div class="form-group">
+            <div class="form-label">Title</div>
+            <input id="inp-title" class="form-input" />
+          </div>
+          <div class="form-group-small">
+            <div class="form-label">Type</div>
+            <input id="inp-type" class="form-input" readonly />
+          </div>
+        </div>
+
+        <div id="icon-selector-section" class="form-section">
+          <div class="form-label">Icon</div>
+          <select id="inp-icon" class="form-input">
+            <option value="">No Icon</option>
+            <option value="ph-line-chart">📈 Line Chart</option>
+            <option value="ph-bar-chart">📊 Bar Chart</option>
+            <option value="ph-gauge">🎛️ Gauge</option>
+            <option value="ph-activity">📊 Activity</option>
+            <option value="ph-cpu">💻 CPU</option>
+            <option value="ph-thermometer">🌡️ Thermometer</option>
+            <option value="ph-speedometer">⏱️ Speedometer</option>
+            <option value="ph-bell">🔔 Bell</option>
+            <option value="ph-warning">⚠️ Warning</option>
+            <option value="ph-check-circle">✅ Check</option>
+            <option value="ph-fire">🔥 Fire</option>
+            <option value="ph-drop">💧 Drop</option>
+            <option value="ph-lightning">⚡ Lightning</option>
+          </select>
+        </div>
+
+        <div id="color-picker-section" class="form-section">
+          <div class="form-label">Chart Color</div>
+          <div class="color-picker">
+            <input type="color" id="inp-color" value="#4f46e5">
+            <input type="text" id="inp-color-text" placeholder="#4f46e5" class="form-input">
+            <button class="btn btn-ghost" onclick="resetColor()">Reset</button>
+          </div>
+        </div>
+
+        <div id="widget-visibility-section" class="widget-visibility-section hidden">
+          <h4>Widget Visibility</h4>
+          <div class="small">Choose which views this widget should appear in:</div>
+          <div id="visibility-options" class="visibility-options"></div>
+          <div class="visibility-info">
+            <i class="ph ph-info"></i> Widget will be hidden in views where it's not selected
+          </div>
+        </div>
+
+        <div id="echarts-form-section" class="echarts-form-section hidden">
+          <div class="form-section-title">Apache ECharts Configuration</div>
+          <div id="echarts-form-content"></div>
+        </div>
+
+        <div id="table-form-section" class="form-section hidden">
+          <div class="echarts-form-section">
+            <div class="form-section-title">Table Configuration</div>
+            
+            <div class="form-row">
+              <div class="form-group">
+                <div class="form-label">Columns <span class="small">(Horizontal)</span></div>
+                <div class="input-with-buttons">
+                  <input type="number" id="table-columns-count" class="form-input" min="1" max="20" value="3" onchange="updateTableForm()">
+                  <button class="btn btn-ghost" onclick="addTableColumn()" title="Add Column">+</button>
+                  <button class="btn btn-ghost" onclick="removeTableColumn()" title="Remove Column">-</button>
+                </div>
+              </div>
+              <div class="form-group">
+                <div class="form-label">Rows <span class="small">(Vertical)</span></div>
+                <div class="input-with-buttons">
+                  <input type="number" id="table-rows-count" class="form-input" min="1" max="100" value="3" onchange="updateTableForm()">
+                  <button class="btn btn-ghost" onclick="addTableRow()" title="Add Row">+</button>
+                  <button class="btn btn-ghost" onclick="removeTableRow()" title="Remove Row">-</button>
+                </div>
+              </div>
+            </div>
+            
+            <div id="table-header-colors-section" class="hidden">
+              <div class="form-label">Header Colors</div>
+              <div id="table-header-colors" class="table-header-colors"></div>
+            </div>
+            
+            <div class="form-section">
+              <div class="table-data-grid">
+                <div class="table-header">
+                  <div class="table-header-label">Headers →</div>
+                  <div id="table-headers" class="table-headers"></div>
+                </div>
+                
+                <div id="table-data-grid" class="table-data-container">
+                  <div class="table-grid">
+                    <div class="table-row-numbers">
+                      <div class="row-numbers-header">Rows ↓</div>
+                      <div id="table-row-numbers"></div>
+                    </div>
+                    <div id="table-data-table" class="table-data"></div>
+                  </div>
+                </div>
+                
+                <div class="table-actions">
+                  <div class="quick-actions">
+                    <div class="small">Quick Data Entry</div>
+                    <div class="action-buttons">
+                      <input type="text" id="quick-cell-value" class="form-input" placeholder="Value for selected cells">
+                      <button class="btn btn-ghost" onclick="fillSelectedCells()">Fill</button>
+                      <button class="btn btn-ghost" onclick="clearTable()">Clear All</button>
+                    </div>
+                  </div>
+                  <div class="bulk-actions">
+                    <div class="small">Bulk Operations</div>
+                    <div class="action-buttons">
+                      <button class="btn btn-ghost" onclick="addTableColumnBulk()">+ 5 Columns</button>
+                      <button class="btn btn-ghost" onclick="addTableRowBulk()">+ 10 Rows</button>
+                      <button class="btn btn-ghost" onclick="exportTableCSV()">Export CSV</button>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="csv-import">
+                  <div class="small">Data Points (Alternative Entry)</div>
+                  <div class="csv-input">
+                    <textarea id="table-csv-input" class="form-input" rows="4" placeholder="Enter CSV data or paste from Excel/Sheets"></textarea>
+                    <div class="csv-buttons">
+                      <button class="btn btn-ghost" onclick="importTableFromCSV()">Import CSV</button>
+                      <button class="btn btn-ghost" onclick="importTableFromDataPoints()">Use Data Points</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="data-points-section" class="form-section hidden">
+          <div class="form-label">Data points (label / value)</div>
+          <div id="data-points" class="data-points"></div>
+          <div class="add-point">
+            <input id="new-label" placeholder="label" class="form-input">
+            <input id="new-value" placeholder="value" class="form-input">
+            <button class="btn btn-ghost" onclick="addPointFromInputs()">Add point</button>
+          </div>
+        </div>
+
+        <div id="gauge-minmax" class="form-section hidden">
+          <div class="form-row">
+            <div class="form-group"><div class="form-label">Min</div><input id="inp-min" class="form-input"></div>
+            <div class="form-group-small"><div class="form-label">Max</div><input id="inp-max" class="form-input"></div>
+          </div>
+        </div>
+
+        <div id="group-settings" class="form-section hidden">
+          <div class="form-label">Group Count</div>
+          <input id="group-count" type="number" min="1" class="form-input" value="2" />
+          <div class="form-label">Group Items (label:value per line)</div>
+          <textarea id="group-items" class="form-input" rows="5" placeholder="Label1:10\nLabel2:20"></textarea>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn" onclick="resetModal()">Reset</button>
+          <button class="btn btn-primary" onclick="saveModal()">Apply</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="history-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Dashboard History</h3>
+        <button class="btn btn-ghost" onclick="closeHistoryModal()">Close</button>
+      </div>
+      <div class="modal-content">
+        <div class="small">Select a snapshot to restore</div>
+        <div id="history-list" class="history-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="create-view-modal" class="create-nav-modal hidden">
+    <div class="create-nav-modal-content">
+      <h3>Create New View</h3>
+      <div class="form-group">
+        <label for="view-name">View Name</label>
+        <input type="text" id="view-name" class="form-input" placeholder="e.g., Overview, Charts, Alerts" value="Overview">
+      </div>
+      <div class="form-group">
+        <label for="view-icon">Icon</label>
+        <select id="view-icon" class="form-input">
+          <option value="ph-house">🏠 Home</option>
+          <option value="ph-chart-line">📈 Charts</option>
+          <option value="ph-gauge">🎛️ Gauges</option>
+          <option value="ph-table">📊 Tables</option>
+          <option value="ph-cardholder">💳 Cards</option>
+          <option value="ph-eye">👁️ Overview</option>
+          <option value="ph-warning">⚠️ Alerts</option>
+          <option value="ph-activity">📊 Metrics</option>
+          <option value="ph-speedometer">⏱️ Dashboard</option>
+          <option value="ph-bell">🔔 Notifications</option>
+        </select>
+      </div>
+      <div class="create-nav-modal-actions">
+        <button class="btn btn-ghost" onclick="closeCreateViewModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="createView()">Create View</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="manage-views-modal" class="manage-views-modal hidden">
+    <div class="manage-views-modal-content">
+      <h3>Manage Views</h3>
+      <div class="small">Click on a view to select widgets for that view</div>
+      <div id="views-list" class="views-list"></div>
+      <div class="manage-views-actions">
+        <button class="btn btn-ghost" onclick="closeManageViewsModal()">Close</button>
+        <button class="btn btn-primary" onclick="openWidgetSelectionForView()">Select Widgets</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="widget-selection-modal" class="widget-selection-modal hidden">
+    <div class="widget-selection-modal-content">
+      <h3 id="widget-selection-title">Select Widgets for View</h3>
+      <div class="small">Choose which widgets should appear in this view</div>
+      <div id="widgets-list" class="widgets-list"></div>
+      <div class="widget-selection-actions">
+        <button class="btn btn-ghost" onclick="closeWidgetSelectionModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveWidgetSelection()">Save Selection</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast">Saved Successfully</div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
