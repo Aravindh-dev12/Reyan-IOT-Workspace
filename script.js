@@ -70,7 +70,8 @@ function saveDashboardViews(dashboardId, dashboardViews) {
 
 function markUnsaved() {
   hasUnsavedChanges = true;
-  document.getElementById('btn-save').classList.remove('hidden');
+  const btn = document.getElementById('btn-save');
+  if (btn) btn.classList.remove('hidden');
 }
 
 function performSave() {
@@ -81,11 +82,23 @@ function performSave() {
       const id = content.getAttribute('gs-id');
       const cfg = widgetRegistry.get(id);
       const parent = content.closest('.grid-stack-item');
-      const node = parent ? grid.engine.nodes.find(n => n.el === parent) : null;
+      const node = parent && grid && grid.engine ? grid.engine.nodes.find(n => n.el === parent) : null;
       
       if (!cfg) return null;
       
       const size = getDefaultSize(cfg.type, cfg);
+      
+      // Save position for CURRENT VIEW
+      if (currentViewId && node) {
+        if (!cfg.positions) cfg.positions = {};
+        cfg.positions[currentViewId] = {
+          x: node.x,
+          y: node.y,
+          w: node.w,
+          h: node.h
+        };
+      }
+      
       return {
         id: cfg.id,
         type: cfg.type,
@@ -102,10 +115,8 @@ function performSave() {
         tableRows: cfg.tableRows,
         tableHeaderColors: cfg.tableHeaderColors || {},
         viewIds: cfg.viewIds || [],
-        x: node ? node.x : 0,
-        y: node ? node.y : 0,
-        w: node ? node.w : size.w,
-        h: node ? node.h : size.h
+        // Store positions PER VIEW
+        positions: cfg.positions || {}
       };
     })
     .filter(Boolean);
@@ -133,7 +144,8 @@ function performSave() {
   writeDashboards(list);
   refreshList();
   hasUnsavedChanges = false;
-  document.getElementById('btn-save').classList.add('hidden');
+  const btn = document.getElementById('btn-save');
+  if (btn) btn.classList.add('hidden');
   showSavedToast('Saved');
 }
 
@@ -156,7 +168,6 @@ function refreshList() {
       <div class="actions">
         <button class="btn btn-primary" onclick="openWorkspace('${d.id}')">Open</button>
         <button class="btn" onclick="exportDashboardFromList('${d.id}')">Export</button>
-        <button class="btn btn-ghost" onclick="startEditFromList(event,'${d.id}')">Edit Layout</button>
         <button class="btn" onclick="deleteDashboard(event,'${d.id}')">Delete</button>
       </div>
     </div>
@@ -195,33 +206,167 @@ function handleFileImport(event) {
   reader.onload = function(e) {
     try {
       const importData = JSON.parse(e.target.result);
-      if (!importData.dashboard || !importData.widgets) throw new Error('Invalid SCADAPro export format');
+      
+      let dashboardName = '';
+      let widgets = [];
 
-      const dashboardName = importData.dashboard.name || `Imported Dashboard ${new Date().toLocaleDateString()}`;
+      // Handle different JSON formats
+      if (importData.dashboard && importData.widgets) {
+        // SCADAPro export format
+        dashboardName = importData.dashboard.name || `Imported Dashboard ${new Date().toLocaleDateString()}`;
+        widgets = importData.widgets.map(w => ({
+          id: w.id || `w_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          type: w.type,
+          title: w.title || w.type,
+          icon: w.icon || '',
+          color: w.color || '#4f46e5',
+          xData: w.data?.xData || [],
+          yData: w.data?.yData || [],
+          min: w.data?.min,
+          max: w.data?.max,
+          groupCount: w.data?.groupCount,
+          groupItems: w.data?.groupItems || [],
+          tableColumns: w.data?.tableColumns,
+          tableRows: w.data?.tableRows,
+          tableHeaderColors: w.data?.tableHeaderColors || {},
+          viewIds: w.data?.viewIds || [],
+          positions: w.data?.positions || {}
+        }));
+      } else if (importData.name && importData.data) {
+        // Direct dashboard object format (single dashboard)
+        dashboardName = importData.name;
+        try {
+          widgets = JSON.parse(importData.data);
+        } catch (e) {
+          widgets = Array.isArray(importData.data) ? importData.data : [];
+        }
+      } else if (Array.isArray(importData)) {
+        // Array of dashboards format
+        if (importData.length > 0 && importData[0].id && importData[0].name) {
+          // This is an array of dashboards - import the first one
+          const dash = importData[0];
+          dashboardName = dash.name;
+          try {
+            widgets = JSON.parse(dash.data || '[]');
+          } catch (e) {
+            widgets = Array.isArray(dash.data) ? dash.data : [];
+          }
+        } else {
+          // This is an array of widgets directly
+          dashboardName = `Imported Dashboard ${new Date().toLocaleDateString()}`;
+          widgets = importData.map(w => ({
+            id: w.id || `w_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            type: w.type || 'card',
+            title: w.title || w.type || 'Widget',
+            icon: w.icon || '',
+            color: w.color || '#4f46e5',
+            xData: w.xData || [],
+            yData: w.yData || [],
+            min: w.min,
+            max: w.max,
+            groupCount: w.groupCount,
+            groupItems: w.groupItems || [],
+            tableColumns: w.tableColumns,
+            tableRows: w.tableRows,
+            tableHeaderColors: w.tableHeaderColors || {},
+            viewIds: w.viewIds || [],
+            positions: w.positions || {}
+          }));
+        }
+      } else if (importData.widgets && importData.name) {
+        // Alternative export format
+        dashboardName = importData.name;
+        widgets = importData.widgets.map(w => ({
+          id: w.id || `w_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          type: w.type,
+          title: w.title || w.type,
+          icon: w.icon || '',
+          color: w.color || '#4f46e5',
+          xData: w.xData || [],
+          yData: w.yData || [],
+          min: w.min,
+          max: w.max,
+          groupCount: w.groupCount,
+          groupItems: w.groupItems || [],
+          tableColumns: w.tableColumns,
+          tableRows: w.tableRows,
+          tableHeaderColors: w.tableHeaderColors || {},
+          viewIds: w.viewIds || [],
+          positions: w.positions || {}
+        }));
+      } else {
+        // Try to parse as raw widget data
+        dashboardName = `Imported Dashboard ${new Date().toLocaleDateString()}`;
+        
+        if (Array.isArray(importData)) {
+          widgets = importData.map(w => ({
+            id: w.id || `w_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            type: w.type || 'card',
+            title: w.title || w.type || 'Widget',
+            icon: w.icon || '',
+            color: w.color || '#4f46e5',
+            xData: w.xData || [],
+            yData: w.yData || [],
+            min: w.min,
+            max: w.max,
+            groupCount: w.groupCount,
+            groupItems: w.groupItems || [],
+            tableColumns: w.tableColumns,
+            tableRows: w.tableRows,
+            tableHeaderColors: w.tableHeaderColors || {},
+            viewIds: w.viewIds || [],
+            positions: w.positions || {}
+          }));
+        } else {
+          // Single widget or unknown format
+          widgets = [{
+            id: `w_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            type: importData.type || 'card',
+            title: importData.title || importData.type || 'Widget',
+            icon: importData.icon || '',
+            color: importData.color || '#4f46e5',
+            xData: importData.xData || [],
+            yData: importData.yData || [],
+            min: importData.min,
+            max: importData.max,
+            groupCount: importData.groupCount,
+            groupItems: importData.groupItems || [],
+            tableColumns: importData.tableColumns,
+            tableRows: importData.tableRows,
+            tableHeaderColors: importData.tableHeaderColors || {},
+            viewIds: importData.viewIds || [],
+            positions: importData.positions || {}
+          }];
+        }
+      }
+
+      // Ensure all widgets have required fields AND assign them to default view
+      widgets = widgets.map(w => {
+        // If no viewIds are specified, assign to default view
+        const viewIds = w.viewIds && w.viewIds.length > 0 ? w.viewIds : [];
+        
+        return {
+          id: w.id || `w_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          type: w.type || 'card',
+          title: w.title || w.type || 'Widget',
+          icon: w.icon || '',
+          color: w.color || '#4f46e5',
+          xData: w.xData || [],
+          yData: w.yData || [],
+          min: w.min,
+          max: w.max,
+          groupCount: w.groupCount,
+          groupItems: w.groupItems || [],
+          tableColumns: w.tableColumns,
+          tableRows: w.tableRows,
+          tableHeaderColors: w.tableHeaderColors || {},
+          viewIds: viewIds, // Keep existing or empty
+          positions: w.positions || {}
+        };
+      });
+
       const id = 'dash_' + Date.now();
       
-      const widgets = importData.widgets.map(w => ({
-        id: w.id || `w_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        type: w.type,
-        title: w.title || w.type,
-        icon: w.icon || '',
-        color: w.color || '#4f46e5',
-        xData: w.data?.xData || [],
-        yData: w.data?.yData || [],
-        min: w.data?.min,
-        max: w.data?.max,
-        groupCount: w.data?.groupCount,
-        groupItems: w.data?.groupItems || [],
-        tableColumns: w.data?.tableColumns,
-        tableRows: w.data?.tableRows,
-        tableHeaderColors: w.data?.tableHeaderColors || {},
-        viewIds: w.data?.viewIds || [],
-        x: w.position?.x || 0,
-        y: w.position?.y || 0,
-        w: w.position?.w || getDefaultSize(w.type, {}).w,
-        h: w.position?.h || getDefaultSize(w.type, {}).h
-      }));
-
       const list = readDashboards();
       list.unshift({
         id,
@@ -237,9 +382,13 @@ function handleFileImport(event) {
       refreshList();
       event.target.value = '';
       showSavedToast(`Dashboard "${dashboardName}" imported successfully`);
-      setTimeout(() => openWorkspace(id), 500);
+      
+      // Open the workspace with edit mode to show all widgets
+      setTimeout(() => openWorkspace(id, true), 500);
+      
     } catch (error) {
       alert('Error importing dashboard: ' + error.message);
+      console.error('Import error:', error);
       event.target.value = '';
     }
   };
@@ -265,6 +414,27 @@ function exportDashboardFromList(dashboardId) {
 
   try {
     const widgetData = JSON.parse(dash.data || '[]');
+    
+    // Format widgets consistently
+    const formattedWidgets = widgetData.map(widget => ({
+      id: widget.id,
+      type: widget.type,
+      title: widget.title || widget.type,
+      icon: widget.icon || '',
+      color: widget.color || '#4f46e5',
+      xData: widget.xData || [],
+      yData: widget.yData || [],
+      min: widget.min,
+      max: widget.max,
+      groupCount: widget.groupCount,
+      groupItems: widget.groupItems || [],
+      tableColumns: widget.tableColumns,
+      tableRows: widget.tableRows,
+      tableHeaderColors: widget.tableHeaderColors || {},
+      viewIds: widget.viewIds || [],
+      positions: widget.positions || {}
+    }));
+
     const exportData = {
       dashboard: {
         id: dash.id,
@@ -273,29 +443,10 @@ function exportDashboardFromList(dashboardId) {
         updated_at: dash.updated_at,
         version: '1.0',
         description: `${dash.name} - SCADAPro Dashboard Export`,
-        widgetCount: widgetData.length,
+        widgetCount: formattedWidgets.length,
         gridConfig: { columns: 12, cellHeight: 100, margin: 4 }
       },
-      widgets: widgetData.map(widget => ({
-        id: widget.id,
-        type: widget.type,
-        title: widget.title,
-        icon: widget.icon || '',
-        color: widget.color || '#4f46e5',
-        position: { x: widget.x || 0, y: widget.y || 0, w: widget.w || getDefaultSize(widget.type, widget).w, h: widget.h || getDefaultSize(widget.type, widget).h },
-        data: {
-          xData: widget.xData || [],
-          yData: widget.yData || [],
-          min: widget.min,
-          max: widget.max,
-          groupCount: widget.groupCount,
-          groupItems: widget.groupItems || [],
-          tableColumns: widget.tableColumns,
-          tableRows: widget.tableRows,
-          tableHeaderColors: widget.tableHeaderColors || {},
-          viewIds: widget.viewIds || []
-        }
-      })),
+      widgets: formattedWidgets,
       exportInfo: {
         exportedAt: new Date().toISOString(),
         exportedBy: 'SCADAPro',
@@ -308,7 +459,7 @@ function exportDashboardFromList(dashboardId) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${dash.name.replace(/\s+/g, '_')}_dashboard_export.json`;
+    a.download = `${dash.name.replace(/[^\w\s-]/g, '').replace(/\s+/g, '_')}_dashboard_export.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -316,17 +467,20 @@ function exportDashboardFromList(dashboardId) {
     showSavedToast('Dashboard exported successfully');
   } catch (error) {
     alert('Error exporting dashboard: ' + error.message);
+    console.error('Export error:', error);
   }
 }
 
-function openWorkspace(id) {
+function openWorkspace(id, openInEditMode = false) {
   currentDashId = id;
   document.getElementById('screen-list').classList.add('hidden');
   document.getElementById('screen-workspace').classList.remove('hidden');
   
   const panelId = getPanelId(id);
-  document.getElementById('workspace-panel-id').textContent = `Panel ID: ${panelId}`;
+  const panelEl = document.getElementById('workspace-panel-id');
+  if (panelEl) panelEl.textContent = `Panel ID: ${panelId}`;
   
+  // Clean up existing widgets
   widgetRegistry.forEach((cfg, id) => {
     if (cfg._timer) clearInterval(cfg._timer);
     if (cfg._ro) try { cfg._ro.disconnect(); } catch(e) {}
@@ -335,16 +489,63 @@ function openWorkspace(id) {
   widgetRegistry.clear();
   grid.removeAll();
   
-  isEditMode = false;
-  document.getElementById('palette').classList.add('hidden');
-  document.getElementById('sidebar-nav').classList.remove('hidden');
-  document.getElementById('btn-edit').classList.remove('hidden');
-  document.getElementById('btn-save').classList.add('hidden');
-  document.getElementById('btn-cancel').classList.add('hidden');
-  document.getElementById('btn-export').classList.remove('hidden');
-  document.getElementById('btn-history').classList.remove('hidden');
-  grid.enableMove(false);
-  grid.enableResize(false);
+  // Set edit mode based on parameter
+  isEditMode = openInEditMode;
+  
+  const palette = document.getElementById('palette');
+  if (palette) {
+    if (openInEditMode) {
+      palette.classList.remove('hidden');
+    } else {
+      palette.classList.add('hidden');
+    }
+  }
+  
+  const sidebar = document.getElementById('sidebar-nav');
+  if (sidebar) {
+    if (openInEditMode) {
+      sidebar.classList.add('hidden');
+    } else {
+      sidebar.classList.remove('hidden');
+    }
+  }
+  
+  const btnEditLayout = document.getElementById('btn-edit-layout');
+  if (btnEditLayout) {
+    if (openInEditMode) {
+      btnEditLayout.classList.add('hidden');
+    } else {
+      btnEditLayout.classList.remove('hidden');
+    }
+  }
+  
+  const btnSave = document.getElementById('btn-save');
+  if (btnSave) {
+    if (openInEditMode) {
+      btnSave.classList.remove('hidden');
+    } else {
+      btnSave.classList.add('hidden');
+    }
+  }
+  
+  const btnCancel = document.getElementById('btn-cancel');
+  if (btnCancel) {
+    if (openInEditMode) {
+      btnCancel.classList.remove('hidden');
+    } else {
+      btnCancel.classList.add('hidden');
+    }
+  }
+  
+  const btnExport = document.getElementById('btn-export');
+  if (btnExport) btnExport.classList.remove('hidden');
+  
+  const btnHistory = document.getElementById('btn-history');
+  if (btnHistory) btnHistory.classList.remove('hidden');
+  
+  // Enable/disable grid features based on edit mode
+  grid.enableMove(openInEditMode);
+  grid.enableResize(openInEditMode);
   
   const list = readDashboards();
   const dash = list.find(d => d.id === id);
@@ -354,7 +555,8 @@ function openWorkspace(id) {
     return;
   }
   
-  document.getElementById('workspace-title').innerText = dash.name;
+  const titleEl = document.getElementById('workspace-title');
+  if (titleEl) titleEl.innerText = dash.name;
   let widgets = [];
   
   try {
@@ -363,36 +565,135 @@ function openWorkspace(id) {
     widgets = [];
   }
   
+  loadViews();
+  
+  // Check if this is an imported dashboard without view assignments
+  const hasViewAssignments = widgets.some(w => w.viewIds && w.viewIds.length > 0);
+  
+  // Add all widgets to grid (but position them based on current view)
   widgets.forEach(w => {
     if (!w || !w.type) return;
     const el = makeWidgetElement(w);
     const size = getDefaultSize(w.type, w);
-    const x = (typeof w.x === 'number' && !isNaN(w.x)) ? w.x : 0;
-    const y = (typeof w.y === 'number' && !isNaN(w.y)) ? w.y : 0;
-    const width = (typeof w.w === 'number' && w.w > 0) ? w.w : size.w;
-    const height = (typeof w.h === 'number' && w.h > 0) ? w.h : size.h;
+    
+    // Get position for current view (or use default)
+    let x = 0, y = 0, width = size.w, height = size.h;
+    
+    if (currentViewId && w.positions && w.positions[currentViewId]) {
+      const pos = w.positions[currentViewId];
+      x = pos.x || 0;
+      y = pos.y || 0;
+      width = pos.w || size.w;
+      height = pos.h || size.h;
+    } else {
+      // Fallback to old position format
+      x = (typeof w.x === 'number' && !isNaN(w.x)) ? w.x : 0;
+      y = (typeof w.y === 'number' && !isNaN(w.y)) ? w.y : 0;
+      width = (typeof w.w === 'number' && w.w > 0) ? w.w : size.w;
+      height = (typeof w.h === 'number' && w.h > 0) ? w.h : size.h;
+    }
     
     try {
       grid.addWidget(el, { w: width, h: height, x: x, y: y });
+      
+      // Ensure viewIds is always an array
+      let viewIds = Array.isArray(w.viewIds) ? w.viewIds : [];
+      
+      // If imported dashboard has no view assignments, assign to default view
+      if (!hasViewAssignments && views.length > 0 && viewIds.length === 0) {
+        viewIds = [views[0].id]; // Assign to first view (default view)
+      }
+      
       widgetRegistry.set(w.id, {
         ...w,
         instance: null,
-        viewIds: w.viewIds || [],
+        viewIds: viewIds,
+        positions: w.positions || {},
         tableHeaderColors: w.tableHeaderColors || {}
       });
-    } catch(err) {}
+    } catch(err) {
+      console.error('Error adding widget:', err);
+    }
   });
-  
-  loadViews();
   
   setTimeout(() => {
     widgetRegistry.forEach((cfg, id) => {
       try { initWidget(id); } catch(err) {}
     });
     
-    if (views.length > 0 && currentViewId) {
+    // Reconcile views now that widgetRegistry is populated
+    reconcileViewWidgetIds();
+    updateSidebarNavigation();
+
+    // If imported dashboard had no view assignments, assign all widgets to default view
+    if (!hasViewAssignments && views.length > 0) {
+      const defaultView = views[0];
+      widgetRegistry.forEach((cfg, widgetId) => {
+        if (!cfg.viewIds || cfg.viewIds.length === 0) {
+          cfg.viewIds = [defaultView.id];
+        }
+      });
+      reconcileViewWidgetIds();
+      saveDashboardViews(currentDashId, views);
+      updateSidebarNavigation();
+    }
+
+    // Apply filtering for the current view (or first view)
+    if (views.length > 0) {
+      if (currentViewId && views.find(v => v.id === currentViewId)) {
+        const view = views.find(v => v.id === currentViewId);
+        setTimeout(() => applyViewFiltering(view), 100);
+      } else if (!openInEditMode) {
+        // Activate first view and apply filtering (but not in edit mode)
+        activateView(views[0].id);
+      }
+    }
+    
+    // If in edit mode, show only widgets from current view
+    if (openInEditMode && currentViewId) {
       const view = views.find(v => v.id === currentViewId);
-      if (view) setTimeout(() => applyStrictViewFiltering(view), 100);
+      if (view) {
+        setTimeout(() => {
+          // Hide all widgets first
+          document.querySelectorAll('.grid-stack-item').forEach(item => {
+            item.style.display = 'none';
+            item.style.visibility = 'hidden';
+            item.style.opacity = '0';
+            item.style.pointerEvents = 'none';
+          });
+          
+          // Show only widgets assigned to this view
+          view.widgetIds.forEach(widgetId => {
+            const elements = document.querySelectorAll(`[gs-id="${widgetId}"], [data-gs-id="${widgetId}"]`);
+            elements.forEach(el => {
+              let item = el;
+              while (item && !item.classList.contains('grid-stack-item')) {
+                if (item.parentElement) {
+                  item = item.parentElement;
+                } else {
+                  item = null;
+                  break;
+                }
+              }
+              
+              if (item) {
+                item.style.display = '';
+                item.style.visibility = 'visible';
+                item.style.opacity = '1';
+                item.style.pointerEvents = 'auto';
+              }
+            });
+          });
+        }, 150);
+      }
+    } else if (openInEditMode) {
+      // If in edit mode but no current view, show ALL widgets
+      document.querySelectorAll('.grid-stack-item').forEach(item => {
+        item.style.display = '';
+        item.style.visibility = 'visible';
+        item.style.opacity = '1';
+        item.style.pointerEvents = 'auto';
+      });
     }
   }, 300);
 }
@@ -411,8 +712,16 @@ function closeWorkspace() {
   
   document.getElementById('screen-workspace').classList.add('hidden');
   document.getElementById('screen-list').classList.remove('hidden');
-  document.getElementById('btn-export').classList.add('hidden');
-  document.getElementById('btn-history').classList.add('hidden');
+  
+  const btnEditLayout = document.getElementById('btn-edit-layout');
+  if (btnEditLayout) btnEditLayout.classList.add('hidden');
+  
+  const btnExport = document.getElementById('btn-export');
+  if (btnExport) btnExport.classList.add('hidden');
+  
+  const btnHistory = document.getElementById('btn-history');
+  if (btnHistory) btnHistory.classList.add('hidden');
+  
   refreshList();
 }
 
@@ -421,10 +730,11 @@ function loadViews() {
   
   views = getDashboardViews(currentDashId);
   
+  // If no views exist, create a default empty view
   if (views.length === 0) {
     views = [{
-      id: 'view_all_' + Date.now(),
-      name: 'All Widgets',
+      id: 'view_default_' + Date.now(),
+      name: 'Default View',
       icon: 'ph-house',
       widgetIds: [],
       order: 0
@@ -433,70 +743,324 @@ function loadViews() {
   }
   
   views.sort((a, b) => a.order - b.order);
+
+  // Reconcile memberships from widgetRegistry
+  reconcileViewWidgetIds();
   updateSidebarNavigation();
-  
-  if (views.length > 0) {
-    activateView(views[0].id);
-  }
 }
 
 function updateSidebarNavigation() {
   const container = document.getElementById('sidebar-nav-items');
   container.innerHTML = views.map(view => {
     const iconClass = getIconClass(view.icon) || 'ph ph-house';
+    const count = view.widgetIds ? view.widgetIds.length : 0;
     return `
       <button class="sidebar-nav-item ${view.id === currentViewId ? 'active' : ''}" 
-              id="view-btn-${view.id}" onclick="activateView('${view.id}')">
+              id="view-btn-${view.id}" data-view-id="${view.id}" onclick="activateView('${view.id}')">
         <div class="ic"><i class="${iconClass}"></i></div>
         <span>${escapeHtml(view.name)}</span>
+        <span class="view-count-badge" title="${count} widget${count === 1 ? '' : 's'}" style="margin-left:auto;padding:2px 8px;border-radius:12px;font-size:12px;background:rgba(0,0,0,0.06)">${count}</span>
       </button>
     `;
   }).join('');
 }
 
-function isWidgetVisibleInView(widgetId, viewId) {
-  if (!viewId || viewId.startsWith('view_all_')) return true;
-  const cfg = widgetRegistry.get(widgetId);
-  return cfg && cfg.viewIds && cfg.viewIds.includes(viewId);
-}
-
-function applyStrictViewFiltering(view) {
-  if (!view) return;
-  
-  const widgetItems = Array.from(grid.engine.nodes);
-  widgetItems.forEach(node => {
-    const content = node.el.querySelector('.grid-stack-item-content');
-    if (!content) return;
-    
-    const widgetId = content.getAttribute('gs-id');
-    let shouldShow = isEditMode || view.id.startsWith('view_all_') || isWidgetVisibleInView(widgetId, view.id);
-    
-    node.el.style.display = shouldShow ? '' : 'none';
-    node.el.style.visibility = shouldShow ? 'visible' : 'hidden';
-    node.el.style.opacity = shouldShow ? '1' : '0';
-    node.el.style.pointerEvents = shouldShow ? 'auto' : 'none';
-    
-    if (shouldShow) delete node.el.dataset.hiddenByView;
-    else node.el.dataset.hiddenByView = 'true';
-  });
-  
-  setTimeout(() => {
-    try { grid.engine.updateNodeArray(); grid.engine.commit(); } catch(e) {}
-  }, 10);
-}
-
 function activateView(viewId) {
   if (!currentDashId) return;
-  
   const view = views.find(v => v.id === viewId);
   if (!view) return;
   
+  // Save current widget positions before switching views
+  if (currentViewId && isEditMode) {
+    saveWidgetPositionsForCurrentView();
+  }
+  
   currentViewId = viewId;
+  
+  console.log(`Activating view: ${view.name} (${viewId}), Edit mode: ${isEditMode}`);
+  
   document.querySelectorAll('.sidebar-nav-item').forEach(btn => btn.classList.remove('active'));
   const activeBtn = document.getElementById(`view-btn-${viewId}`);
   if (activeBtn) activeBtn.classList.add('active');
   
-  applyStrictViewFiltering(view);
+  // Reposition widgets for the new view
+  repositionWidgetsForView(view);
+  
+  // Apply filtering
+  applyViewFiltering(view);
+}
+
+function repositionWidgetsForView(view) {
+  if (!view || !view.widgetIds) return;
+  
+  console.log(`Repositioning widgets for view: ${view.name}`);
+  
+  // Check if grid engine exists
+  if (!grid || !grid.engine) {
+    console.error('Grid engine not available');
+    return;
+  }
+  
+  // First, remove all widgets from grid
+  try {
+    grid.removeAll(false); // false = don't remove DOM elements
+  } catch (err) {
+    console.error('Error removing widgets from grid:', err);
+  }
+  
+  // Then re-add widgets with their positions for this view
+  view.widgetIds.forEach(widgetId => {
+    const cfg = widgetRegistry.get(widgetId);
+    if (!cfg) return;
+    
+    const widgetElement = document.querySelector(`[gs-id="${widgetId}"], [data-gs-id="${widgetId}"]`);
+    if (!widgetElement) return;
+    
+    // Get position for this view
+    let x = 0, y = 0, w = 2, h = 2;
+    const size = getDefaultSize(cfg.type);
+    
+    if (cfg.positions && cfg.positions[view.id]) {
+      const pos = cfg.positions[view.id];
+      x = pos.x || 0;
+      y = pos.y || 0;
+      w = pos.w || size.w;
+      h = pos.h || size.h;
+    } else {
+      w = size.w;
+      h = size.h;
+    }
+    
+    // Get the parent grid-stack-item
+    let gridItem = widgetElement.closest('.grid-stack-item');
+    if (!gridItem) {
+      // Create a wrapper if needed
+      gridItem = document.createElement('div');
+      gridItem.className = 'grid-stack-item';
+      widgetElement.parentNode.insertBefore(gridItem, widgetElement);
+      gridItem.appendChild(widgetElement);
+    }
+    
+    // Update grid item position
+    try {
+      // Use GridStack methods to update widget
+      gridItem.setAttribute('gs-x', x);
+      gridItem.setAttribute('gs-y', y);
+      gridItem.setAttribute('gs-w', w);
+      gridItem.setAttribute('gs-h', h);
+      grid.update(gridItem, { x: x, y: y, w: w, h: h });
+    } catch(err) {
+      console.error('Error updating widget position:', err);
+    }
+  });
+  
+  // Force GridStack to update - use the public API method
+  setTimeout(() => {
+    if (grid && typeof grid.update === 'function') {
+      try {
+        grid.batchUpdate(); // Start batch update
+        grid.commit(); // Commit batch update
+      } catch(e) {
+        console.error('Error updating grid:', e);
+        // Try alternative method
+        if (grid.engine && typeof grid.engine.update === 'function') {
+          try {
+            grid.engine.update();
+          } catch(e2) {
+            console.error('Error updating grid engine:', e2);
+          }
+        }
+      }
+    }
+  }, 50);
+}
+
+function saveWidgetPositionsForCurrentView() {
+  if (!currentViewId || !isEditMode) return;
+  
+  console.log(`Saving widget positions for view: ${currentViewId}`);
+  
+  // Check if grid engine exists
+  if (!grid || !grid.engine) {
+    console.error('Grid engine not available for saving positions');
+    return;
+  }
+  
+  const gridItems = document.querySelectorAll('.grid-stack-item');
+  gridItems.forEach(item => {
+    const content = item.querySelector('.grid-stack-item-content');
+    if (!content) return;
+    
+    const widgetId = content.getAttribute('gs-id');
+    const cfg = widgetRegistry.get(widgetId);
+    if (!cfg) return;
+    
+    const node = grid.engine.nodes.find(n => n.el === item);
+    if (!node) return;
+    
+    // Initialize positions object if it doesn't exist
+    if (!cfg.positions) {
+      cfg.positions = {};
+    }
+    
+    // Save position for current view
+    cfg.positions[currentViewId] = {
+      x: node.x,
+      y: node.y,
+      w: node.w,
+      h: node.h
+    };
+    
+    console.log(`Saved position for widget ${widgetId} in view ${currentViewId}:`, cfg.positions[currentViewId]);
+  });
+  
+  markUnsaved();
+}
+
+function applyViewFiltering(view) {
+  if (!view) return;
+  
+  // Get fresh view data
+  const currentView = views.find(v => v.id === view.id);
+  if (!currentView) return;
+  
+  // Ensure widgetIds is an array
+  const viewWidgetIds = Array.isArray(currentView.widgetIds) ? currentView.widgetIds : [];
+  
+  console.log(`=== APPLYING FILTER FOR VIEW: ${view.name} ===`);
+  console.log(`Widgets assigned to this view:`, viewWidgetIds);
+  console.log(`Is edit mode? ${isEditMode}`);
+  
+  // Get all grid items
+  const gridItems = document.querySelectorAll('.grid-stack-item');
+  console.log(`Total grid items found: ${gridItems.length}`);
+  
+  // FIRST: Hide ALL grid items
+  gridItems.forEach(item => {
+    item.style.display = 'none';
+    item.style.visibility = 'hidden';
+    item.style.opacity = '0';
+    item.style.pointerEvents = 'none';
+  });
+  
+  // If in edit mode, show only widgets for current view
+  if (isEditMode) {
+    console.log(`Edit mode: Showing widgets for current view only`);
+    let shownCount = 0;
+    viewWidgetIds.forEach(widgetId => {
+      const elements = document.querySelectorAll(`[gs-id="${widgetId}"], [data-gs-id="${widgetId}"]`);
+      
+      if (elements.length > 0) {
+        elements.forEach(el => {
+          let item = el;
+          while (item && !item.classList.contains('grid-stack-item')) {
+            if (item.parentElement) {
+              item = item.parentElement;
+            } else {
+              item = null;
+              break;
+            }
+          }
+          
+          if (item) {
+            item.style.display = '';
+            item.style.visibility = 'visible';
+            item.style.opacity = '1';
+            item.style.pointerEvents = 'auto';
+            shownCount++;
+            console.log(`✓ Showing widget: ${widgetId}`);
+          }
+        });
+      } else {
+        console.log(`✗ Widget not found: ${widgetId}`);
+      }
+    });
+    
+    console.log(`Total widgets shown: ${shownCount}`);
+  } else {
+    // Show only widgets assigned to this view
+    console.log(`View mode: Showing only assigned widgets`);
+    
+    let shownCount = 0;
+    viewWidgetIds.forEach(widgetId => {
+      const elements = document.querySelectorAll(`[gs-id="${widgetId}"], [data-gs-id="${widgetId}"]`);
+      
+      if (elements.length > 0) {
+        elements.forEach(el => {
+          let item = el;
+          while (item && !item.classList.contains('grid-stack-item')) {
+            if (item.parentElement) {
+              item = item.parentElement;
+            } else {
+              item = null;
+              break;
+            }
+          }
+          
+          if (item) {
+            item.style.display = '';
+            item.style.visibility = 'visible';
+            item.style.opacity = '1';
+            item.style.pointerEvents = 'auto';
+            shownCount++;
+            console.log(`✓ Showing widget: ${widgetId}`);
+          }
+        });
+      } else {
+        console.log(`✗ Widget not found: ${widgetId}`);
+      }
+    });
+    
+    console.log(`Total widgets shown: ${shownCount}`);
+  }
+  
+  // Force GridStack to update using public API
+  setTimeout(() => {
+    if (grid && typeof grid.update === 'function') {
+      try {
+        grid.batchUpdate(); // Start batch update
+        grid.commit(); // Commit batch update
+      } catch(e) {
+        console.error('Error updating grid:', e);
+      }
+    }
+    
+    // Resize visible charts
+    setTimeout(() => {
+      widgetRegistry.forEach((cfg, id) => {
+        if (cfg.instance && cfg.instance.resize) {
+          const elements = document.querySelectorAll(`[gs-id="${id}"], [data-gs-id="${id}"]`);
+          let isVisible = false;
+          
+          elements.forEach(el => {
+            let item = el;
+            while (item && !item.classList.contains('grid-stack-item')) {
+              if (item.parentElement) {
+                item = item.parentElement;
+              } else {
+                item = null;
+                break;
+              }
+            }
+            
+            if (item && item.style.display !== 'none') {
+              isVisible = true;
+            }
+          });
+          
+          if (isVisible) {
+            try { 
+              cfg.instance.resize(); 
+            } catch(e) {
+              console.error('Error resizing chart:', e);
+            }
+          }
+        }
+      });
+    }, 200);
+  }, 100);
+  
+  console.log(`=== FILTER COMPLETE ===`);
 }
 
 function getDefaultSize(type) {
@@ -682,19 +1246,81 @@ function addWidget(type) {
     id,
     type,
     title,
-    viewIds: [],
+    viewIds: isEditMode && currentViewId ? [currentViewId] : [],
+    positions: {},
     tableHeaderColors: {},
     ...defaultCfg
   };
   
+  console.log(`Adding new widget ${id} with viewIds:`, cfg.viewIds);
+  
   const el = makeWidgetElement(cfg);
   const size = getDefaultSize(type);
-  grid.addWidget(el, { w: size.w, h: size.h, x: 0, y: 0 });
+  
+  // Set initial position for current view
+  let x = 0, y = 0;
+  if (currentViewId) {
+    // Find an empty spot
+    const occupied = new Set();
+    document.querySelectorAll('.grid-stack-item').forEach(item => {
+      const node = grid.engine ? grid.engine.nodes.find(n => n.el === item) : null;
+      if (node) {
+        for (let i = node.x; i < node.x + node.w; i++) {
+          for (let j = node.y; j < node.y + node.h; j++) {
+            occupied.add(`${i},${j}`);
+          }
+        }
+      }
+    });
+    
+    // Find first available spot
+    let found = false;
+    for (let i = 0; i < 12 - size.w + 1 && !found; i++) {
+      for (let j = 0; j < 20 && !found; j++) {
+        let canPlace = true;
+        for (let dx = 0; dx < size.w && canPlace; dx++) {
+          for (let dy = 0; dy < size.h && canPlace; dy++) {
+            if (occupied.has(`${i + dx},${j + dy}`)) {
+              canPlace = false;
+            }
+          }
+        }
+        if (canPlace) {
+          x = i;
+          y = j;
+          found = true;
+          break;
+        }
+      }
+    }
+  }
+  
+  grid.addWidget(el, { w: size.w, h: size.h, x: x, y: y });
+  
+  // Initialize position for current view
+  if (currentViewId) {
+    cfg.positions[currentViewId] = {
+      x: x,
+      y: y,
+      w: size.w,
+      h: size.h
+    };
+  }
+  
   widgetRegistry.set(id, { ...cfg, instance: null });
   
   setTimeout(() => { 
     initWidget(id); 
-    if (currentViewId) applyStrictViewFiltering(views.find(v => v.id === currentViewId));
+    // After creating a widget, reconcile view membership so counts update
+    reconcileViewWidgetIds();
+    updateSidebarNavigation();
+    
+    // If in edit mode, the widget should already be visible
+    // If in view mode, apply filtering
+    if (currentViewId && !isEditMode) {
+      const view = views.find(v => v.id === currentViewId);
+      if (view) setTimeout(() => applyViewFiltering(view), 100);
+    }
   }, 100);
   markUnsaved();
 }
@@ -775,12 +1401,14 @@ function removeWidget(id) {
   
   markUnsaved();
   
-  // Remove widget from all views
+  // Remove widget from all views and reconcile
   if (currentDashId) {
     views.forEach(view => {
       if (view.widgetIds) view.widgetIds = view.widgetIds.filter(widgetId => widgetId !== id);
     });
+    reconcileViewWidgetIds();
     saveDashboardViews(currentDashId, views);
+    updateSidebarNavigation();
   }
 }
 
@@ -937,7 +1565,11 @@ function initWidget(id) {
     
     const rect = chartEl.getBoundingClientRect();
     const option = buildOptionAdvanced(cfg, rect.width || 600, rect.height || 300);
-    try { chart.setOption(option, true); } catch(e) {}
+    try { 
+      chart.setOption(option, true); 
+    } catch(e) {
+      console.error('Error setting chart option:', e);
+    }
 
     if (cfg.type === 'timeseries' && !cfg._timer) {
       cfg._ts = cfg._ts || { x: [], y: [] };
@@ -956,12 +1588,24 @@ function initWidget(id) {
         cfg._ts.y.push(Math.round(20 + Math.random()*60));
         if (cfg._ts.x.length > 50) cfg._ts.x.shift();
         if (cfg._ts.y.length > 50) cfg._ts.y.shift();
-        try { cfg.instance.setOption({ xAxis: { data: cfg._ts.x }, series: [{ data: cfg._ts.y }] }); } catch(e) {}
+        try { 
+          cfg.instance.setOption({ xAxis: { data: cfg._ts.x }, series: [{ data: cfg._ts.y }] }); 
+        } catch(e) {
+          console.error('Error updating timeseries:', e);
+        }
       }, 1200);
     }
 
     if (cfg._ro) try { cfg._ro.disconnect(); } catch(e) {}
-    const ro = new ResizeObserver(() => cfg.instance && cfg.instance.resize());
+    const ro = new ResizeObserver(() => {
+      if (cfg.instance && cfg.instance.resize) {
+        try {
+          cfg.instance.resize();
+        } catch(e) {
+          console.error('Error resizing chart:', e);
+        }
+      }
+    });
     ro.observe(chartEl);
     cfg._ro = ro;
   }
@@ -1290,6 +1934,7 @@ function saveModal() {
   cfg.icon = document.getElementById('inp-icon').value || '';
   cfg.color = document.getElementById('inp-color').value || '#4f46e5';
 
+  // Get selected views for this widget
   const selectedViewIds = [];
   views.forEach(view => {
     const checkbox = document.getElementById(`visibility-${view.id}`);
@@ -1297,19 +1942,26 @@ function saveModal() {
       selectedViewIds.push(view.id);
     }
   });
+  
+  console.log(`Saving widget ${cfg.id}: Selected view IDs =`, selectedViewIds);
+  
+  // Update widget's view assignments
   cfg.viewIds = selectedViewIds;
   
-  // Update views with widget assignments
   views.forEach(view => {
-    if (selectedViewIds.includes(view.id)) {
-      if (!view.widgetIds) view.widgetIds = [];
+    if (!view.widgetIds) view.widgetIds = [];
+    if (cfg.viewIds.includes(view.id)) {
       if (!view.widgetIds.includes(cfg.id)) view.widgetIds.push(cfg.id);
     } else {
-      if (view.widgetIds) view.widgetIds = view.widgetIds.filter(id => id !== cfg.id);
+      view.widgetIds = view.widgetIds.filter(id => id !== cfg.id);
     }
   });
 
+  reconcileViewWidgetIds();
   saveDashboardViews(currentDashId, views);
+  updateSidebarNavigation();
+  
+  console.log(`After save: Widget ${cfg.id} viewIds =`, cfg.viewIds);
 
   if (cfg.type === 'table') {
     const colCount = parseInt(document.getElementById('table-columns-count').value) || 3;
@@ -1332,7 +1984,6 @@ function saveModal() {
     cfg.tableColumns = colCount;
     cfg.tableRows = rowCount;
   } else {
-    // Handle regular data points
     const dp = document.getElementById('data-points');
     const rows = [...dp.querySelectorAll('.point-row')];
     const xData = [], yData = [];
@@ -1371,7 +2022,7 @@ function saveModal() {
   
   if (currentViewId) {
     const view = views.find(v => v.id === currentViewId);
-    if (view) setTimeout(() => applyStrictViewFiltering(view), 50);
+    if (view) setTimeout(() => applyViewFiltering(view), 100);
   }
 }
 
@@ -1379,19 +2030,54 @@ function enterEditMode() {
   if (isEditMode) return;
   isEditMode = true;
   
-  // Show all widgets in edit mode
-  grid.engine.nodes.forEach(node => {
-    node.el.style.display = '';
-    node.el.style.visibility = 'visible';
-    node.el.style.opacity = '1';
-    node.el.style.pointerEvents = 'auto';
+  const currentView = views.find(v => v.id === currentViewId);
+  
+  // Show only widgets assigned to this view (even in edit mode)
+  document.querySelectorAll('.grid-stack-item').forEach(item => {
+    item.style.display = 'none';
+    item.style.visibility = 'hidden';
+    item.style.opacity = '0';
+    item.style.pointerEvents = 'none';
   });
   
-  document.getElementById('palette').classList.remove('hidden');
-  document.getElementById('sidebar-nav').classList.add('hidden');
-  document.getElementById('btn-edit').classList.add('hidden');
-  document.getElementById('btn-save').classList.remove('hidden');
-  document.getElementById('btn-cancel').classList.remove('hidden');
+  if (currentView && currentView.widgetIds) {
+    currentView.widgetIds.forEach(widgetId => {
+      const elements = document.querySelectorAll(`[gs-id="${widgetId}"], [data-gs-id="${widgetId}"]`);
+      elements.forEach(el => {
+        let item = el;
+        while (item && !item.classList.contains('grid-stack-item')) {
+          if (item.parentElement) {
+            item = item.parentElement;
+          } else {
+            item = null;
+            break;
+          }
+        }
+        
+        if (item) {
+          item.style.display = '';
+          item.style.visibility = 'visible';
+          item.style.opacity = '1';
+          item.style.pointerEvents = 'auto';
+        }
+      });
+    });
+  }
+  
+  const palette = document.getElementById('palette');
+  if (palette) palette.classList.remove('hidden');
+  const sidebar = document.getElementById('sidebar-nav');
+  if (sidebar) sidebar.classList.add('hidden');
+  const btnEditLayout = document.getElementById('btn-edit-layout');
+  if (btnEditLayout) btnEditLayout.classList.add('hidden');
+  const btnSave = document.getElementById('btn-save');
+  if (btnSave) btnSave.classList.remove('hidden');
+  const btnCancel = document.getElementById('btn-cancel');
+  if (btnCancel) btnCancel.classList.remove('hidden');
+  const btnExport = document.getElementById('btn-export');
+  if (btnExport) btnExport.classList.add('hidden');
+  const btnHistory = document.getElementById('btn-history');
+  if (btnHistory) btnHistory.classList.add('hidden');
   grid.enableMove(true);
   grid.enableResize(true);
 }
@@ -1400,31 +2086,54 @@ function cancelEdit() {
   exitEditMode();
   if (currentViewId) {
     const view = views.find(v => v.id === currentViewId);
-    if (view) setTimeout(() => applyStrictViewFiltering(view), 50);
+    if (view) setTimeout(() => applyViewFiltering(view), 50);
   }
 }
 
 function exitEditMode() {
   isEditMode = false;
-  document.getElementById('palette').classList.add('hidden');
-  document.getElementById('sidebar-nav').classList.remove('hidden');
-  document.getElementById('btn-edit').classList.remove('hidden');
-  document.getElementById('btn-save').classList.add('hidden');
-  document.getElementById('btn-cancel').classList.add('hidden');
+  const palette = document.getElementById('palette');
+  if (palette) palette.classList.add('hidden');
+  const sidebar = document.getElementById('sidebar-nav');
+  if (sidebar) sidebar.classList.remove('hidden');
+  const btnEditLayout = document.getElementById('btn-edit-layout');
+  if (btnEditLayout) btnEditLayout.classList.remove('hidden');
+  const btnSave = document.getElementById('btn-save');
+  if (btnSave) btnSave.classList.add('hidden');
+  const btnCancel = document.getElementById('btn-cancel');
+  if (btnCancel) btnCancel.classList.add('hidden');
+  const btnExport = document.getElementById('btn-export');
+  if (btnExport) btnExport.classList.remove('hidden');
+  const btnHistory = document.getElementById('btn-history');
+  if (btnHistory) btnHistory.classList.remove('hidden');
   grid.enableMove(false);
   grid.enableResize(false);
+  
+  if (currentViewId) {
+    const view = views.find(v => v.id === currentViewId);
+    if (view) {
+      setTimeout(() => applyViewFiltering(view), 50);
+    }
+  }
 }
 
 function saveCurrentDashboard() {
+  // Save widget positions for current view before performing save
+  if (currentViewId && isEditMode) {
+    saveWidgetPositionsForCurrentView();
+  }
+  
   performSave();
   exitEditMode();
+  
+  if (currentViewId) {
+    const view = views.find(v => v.id === currentViewId);
+    if (view) {
+      setTimeout(() => applyViewFiltering(view), 100);
+    }
+  }
+  
   showSavedToast('Saved Successfully');
-}
-
-function startEditFromList(e, id) {
-  e.stopPropagation();
-  openWorkspace(id);
-  setTimeout(() => enterEditMode(), 200);
 }
 
 function exportCurrentDashboard() {
@@ -1484,20 +2193,39 @@ function restoreSnapshot(snapshot) {
   snapshot.data.forEach(w => {
     const el = makeWidgetElement(w);
     const size = getDefaultSize(w.type);
-    grid.addWidget(el, { w: w.w || size.w, h: w.h || size.h, x: w.x || 0, y: w.y || 0 });
+    
+    // Get position for current view
+    let x = 0, y = 0, width = size.w, height = size.h;
+    if (currentViewId && w.positions && w.positions[currentViewId]) {
+      const pos = w.positions[currentViewId];
+      x = pos.x || 0;
+      y = pos.y || 0;
+      width = pos.w || size.w;
+      height = pos.h || size.h;
+    } else {
+      x = w.x || 0;
+      y = w.y || 0;
+      width = w.w || size.w;
+      height = w.h || size.h;
+    }
+    
+    grid.addWidget(el, { w: width, h: height, x: x, y: y });
     widgetRegistry.set(w.id, { 
       ...w, 
       instance: null, 
       viewIds: w.viewIds || [],
+      positions: w.positions || {},
       tableHeaderColors: w.tableHeaderColors || {}
     });
   });
   
   setTimeout(() => { 
     widgetRegistry.forEach((cfg, id) => initWidget(id)); 
+    reconcileViewWidgetIds();
+    updateSidebarNavigation();
     if (currentViewId) {
       const view = views.find(v => v.id === currentViewId);
-      if (view) setTimeout(() => applyStrictViewFiltering(view), 150);
+      if (view) setTimeout(() => applyViewFiltering(view), 150);
     }
   }, 120);
   
@@ -1505,7 +2233,6 @@ function restoreSnapshot(snapshot) {
   closeHistoryModal();
 }
 
-// View management
 function openCreateViewModal() {
   document.getElementById('create-view-modal').classList.remove('hidden');
 }
@@ -1532,6 +2259,7 @@ function createView() {
   
   views.push(newView);
   saveDashboardViews(currentDashId, views);
+  reconcileViewWidgetIds();
   updateSidebarNavigation();
   closeCreateViewModal();
   activateView(newView.id);
@@ -1539,35 +2267,38 @@ function createView() {
 }
 
 function openManageViewsModal() {
+  reconcileViewWidgetIds();
+  updateManageViewsModal();
+  document.getElementById('manage-views-modal').classList.remove('hidden');
+}
+
+function updateManageViewsModal() {
   const viewsList = document.getElementById('views-list');
+
   viewsList.innerHTML = views.map(view => {
-    let widgetCountText = 'All widgets';
-    if (view.widgetIds && view.widgetIds.length > 0) {
-      widgetCountText = `${view.widgetIds.length} widget${view.widgetIds.length === 1 ? '' : 's'}`;
-    }
-    
+    const count = view.widgetIds ? view.widgetIds.length : 0;
+    const widgetCountText = `${count} widget${count === 1 ? '' : 's'}`;
     const iconClass = getIconClass(view.icon) || 'ph ph-house';
     return `
-      <div class="view-item ${view.id === currentViewId ? 'active' : ''}" onclick="selectViewForWidgetSelection('${view.id}')">
+      <div class="view-item ${view.id === currentViewId ? 'active' : ''}" data-view-id="${view.id}" onclick="selectViewForWidgetSelection('${view.id}')">
         <div class="view-item-icon"><i class="${iconClass}"></i></div>
         <div class="view-item-details">
           <div class="view-item-name">${escapeHtml(view.name)}</div>
           <div class="view-item-stats">${widgetCountText}</div>
         </div>
         <div class="view-item-actions">
-          <button class="btn btn-ghost" onclick="editView('${view.id}')" style="padding:4px 8px;font-size:12px">Edit</button>
-          <button class="btn" onclick="deleteView('${view.id}')" style="padding:4px 8px;font-size:12px">Delete</button>
+          <button class="btn btn-ghost" onclick="event.stopPropagation(); editView('${view.id}')">Edit</button>
+          <button class="btn" onclick="event.stopPropagation(); deleteView('${view.id}')">Delete</button>
         </div>
       </div>
     `;
   }).join('');
-  
+
   if (views.length > 0 && !selectedViewForWidgetSelection) {
     selectedViewForWidgetSelection = views[0];
   }
   
   updateViewsListSelection();
-  document.getElementById('manage-views-modal').classList.remove('hidden');
 }
 
 function selectViewForWidgetSelection(viewId) {
@@ -1581,7 +2312,7 @@ function updateViewsListSelection() {
   });
   
   if (selectedViewForWidgetSelection) {
-    const selectedItem = document.querySelector(`.view-item[onclick*="${selectedViewForWidgetSelection.id}"]`);
+    const selectedItem = document.querySelector(`.view-item[data-view-id="${selectedViewForWidgetSelection.id}"]`);
     if (selectedItem) selectedItem.classList.add('active');
   }
 }
@@ -1601,7 +2332,7 @@ function editView(viewId) {
   view.name = newName.trim();
   saveDashboardViews(currentDashId, views);
   updateSidebarNavigation();
-  openManageViewsModal();
+  updateManageViewsModal();
   showSavedToast(`View renamed to "${newName}"`);
 }
 
@@ -1625,6 +2356,7 @@ function deleteView(viewId) {
     }
   });
   
+  reconcileViewWidgetIds();
   saveDashboardViews(currentDashId, views);
   
   if (currentViewId === viewId) {
@@ -1632,7 +2364,7 @@ function deleteView(viewId) {
   }
   
   updateSidebarNavigation();
-  openManageViewsModal();
+  updateManageViewsModal();
   showSavedToast(`View "${view.name}" deleted`);
 }
 
@@ -1646,12 +2378,12 @@ function openWidgetSelectionForView() {
   document.getElementById('widget-selection-title').textContent = `Select Widgets for "${view.name}"`;
   const widgetsList = document.getElementById('widgets-list');
   
-  const widgetItems = Array.from(grid.engine.nodes);
+  const widgetItems = document.querySelectorAll('.grid-stack-item');
   if (widgetItems.length === 0) {
     widgetsList.innerHTML = '<div style="text-align:center;padding:20px;color:#6b7280">No widgets found</div>';
   } else {
-    widgetsList.innerHTML = widgetItems.map(node => {
-      const content = node.el.querySelector('.grid-stack-item-content');
+    widgetsList.innerHTML = Array.from(widgetItems).map(item => {
+      const content = item.querySelector('.grid-stack-item-content');
       if (!content) return '';
       
       const widgetId = content.getAttribute('gs-id');
@@ -1702,15 +2434,55 @@ function saveWidgetSelection() {
     }
   });
   
+  reconcileViewWidgetIds();
   saveDashboardViews(currentDashId, views);
+  updateSidebarNavigation();
   
   if (currentViewId === view.id) {
-    applyStrictViewFiltering(view);
+    applyViewFiltering(view);
   }
   
   closeWidgetSelectionModal();
-  openManageViewsModal();
+  updateManageViewsModal();
   showSavedToast(`Widget selection saved for "${view.name}"`);
+}
+
+// Reconcile view.widgetIds from widgetRegistry
+function reconcileViewWidgetIds() {
+  if (!views) return;
+  
+  console.log('=== Reconciling view widget IDs ===');
+  
+  views.forEach(view => {
+    if (!view.widgetIds) {
+      view.widgetIds = [];
+    }
+  });
+  
+  // Clear all view widgetIds first
+  views.forEach(view => {
+    view.widgetIds = [];
+  });
+  
+  widgetRegistry.forEach((cfg, widgetId) => {
+    if (cfg.viewIds && Array.isArray(cfg.viewIds)) {
+      cfg.viewIds.forEach(viewId => {
+        const view = views.find(v => v.id === viewId);
+        if (view && !view.widgetIds.includes(widgetId)) {
+          view.widgetIds.push(widgetId);
+        }
+      });
+    }
+  });
+  
+  console.log('After reconciliation:');
+  views.forEach(view => {
+    console.log(`- View "${view.name}": ${view.widgetIds.length} widgets`, view.widgetIds);
+  });
+  
+  console.log('=== Reconciliation complete ===');
+  
+  if (currentDashId) saveDashboardViews(currentDashId, views);
 }
 
 // Utility functions
@@ -1724,6 +2496,7 @@ function escapeHtml(s) {
 let toastTimer = null;
 function showSavedToast(text = 'Saved') {
   const t = document.getElementById('toast');
+  if (!t) return;
   t.textContent = text + ' ✔';
   t.style.display = 'block';
   if (toastTimer) clearTimeout(toastTimer);
@@ -1734,13 +2507,17 @@ function showSavedToast(text = 'Saved') {
 window.addEventListener('DOMContentLoaded', () => {
   refreshList();
   
-  document.getElementById('inp-color').addEventListener('input', function() {
-    document.getElementById('inp-color-text').value = this.value;
-  });
-  
-  document.getElementById('inp-color-text').addEventListener('input', function() {
-    if (this.value.match(/^#[0-9A-F]{6}$/i)) {
-      document.getElementById('inp-color').value = this.value;
-    }
-  });
+  const colorInput = document.getElementById('inp-color');
+  const colorText = document.getElementById('inp-color-text');
+  if (colorInput && colorText) {
+    colorInput.addEventListener('input', function() {
+      colorText.value = this.value;
+    });
+    
+    colorText.addEventListener('input', function() {
+      if (this.value.match(/^#[0-9A-F]{6}$/i)) {
+        colorInput.value = this.value;
+      }
+    });
+  }
 });
