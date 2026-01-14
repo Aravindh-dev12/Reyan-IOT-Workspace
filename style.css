@@ -33,6 +33,21 @@ html, body {
   display: none !important;
 }
 
+.hidden-widget {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none !important;
+  position: absolute !important;
+  z-index: -1 !important;
+  width: 0 !important;
+  min-width: 0 !important;
+}
 .small {
   font-size: 12px;
   color: var(--muted);
